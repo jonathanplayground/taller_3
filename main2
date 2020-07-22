@@ -1,0 +1,192 @@
+/*
+ * File:   main.c
+ * Author: jonat
+ *
+ * Created on 16 de julio de 2020, 06:19 PM
+ */
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+
+// PIC16F877A Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG
+#pragma config FOSC = XT        // Oscillator Selection bits (XT oscillator)
+#pragma config WDTE = OFF       // Watchdog Timer Enable bit (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable bit (PWRT disabled)
+#pragma config BOREN = OFF      // Brown-out Reset Enable bit (BOR disabled)
+#pragma config LVP = OFF        // Low-Voltage (Single-Supply) In-Circuit Serial Programming Enable bit (RB3 is digital I/O, HV on MCLR must be used for programming)
+#pragma config CPD = OFF        // Data EEPROM Memory Code Protection bit (Data EEPROM code protection off)
+#pragma config WRT = OFF        // Flash Program Memory Write Enable bits (Write protection off; all program memory may be written to by EECON control)
+#pragma config CP = OFF         // Flash Program Memory Code Protection bit (Code protection off)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#define _XTAL_FREQ 20000000     //necesario para utilizar los retardos de la libreria del lcd
+#define LCD_RS       PORTDbits.RD0
+#define LCD_EN       PORTDbits.RD1
+#define LCD_D4       PORTDbits.RD2
+#define LCD_D5       PORTDbits.RD3
+#define LCD_D6       PORTDbits.RD4
+#define LCD_D7       PORTDbits.RD5
+#define LCD_RS_DIR   TRISDbits.TRISD0
+#define LCD_EN_DIR   TRISDbits.TRISD1
+#define LCD_D4_DIR   TRISDbits.TRISD2
+#define LCD_D5_DIR   TRISDbits.TRISD3
+#define LCD_D6_DIR   TRISDbits.TRISD4
+#define LCD_D7_DIR   TRISDbits.TRISD5
+
+#include <xc.h>
+#include "LCD_Lib.h"
+#include <stdint.h>
+#include <stdio.h>      //necesario para utilizar "print"
+
+int temp;
+
+int   data;
+char    str[10];
+int display;
+int pulso = 0;
+int pulso2 = 0;
+int tiempo = 200;
+
+void __interrupt() tcInt(void){//     only     process timer0-triggered interrupts
+   
+   
+   if(PIR1bits.ADIF  && PIE1bits.ADIE) 
+      {
+       PIR1bits.ADIF = 0;
+       LCD_Goto(1, 1);
+       LCD_Print("Objeto: ");
+       LCD_Goto(1, 2);
+       LCD_Print("CNY70");
+       
+       if(ADRESH < 184)
+        {
+            LCD_Goto(9, 1);
+            LCD_Print("Si hay ");
+        }
+       if(ADRESH > 225)
+        {
+            LCD_Goto(9, 1);
+            LCD_Print("No hay ");
+            //eeprom_write (0x20, contador);
+        }
+   }
+}
+
+void main(void) {
+    TRISA   =   3;              //habilitar 2 primeros bits como entradas
+    ADCON0  =   0x81;           //configuracion ADCON0
+    ADCON1  =   0X45;           //buscar hoja de especificaciones para llenar datos.
+    TRISB   =   3;
+    display = 0;
+    
+    LCD_Begin();        //inicializar libreria LCD
+    LCD_Print(" Bienvenido");
+    LCD_Goto(1,3);
+    __delay_ms(1000);
+        
+    while(1)
+    {
+//--------------------------------------------------------------------------
+        //botones
+        if(PORTBbits.RB0 == 1)
+        {
+            pulso = 1;  
+        }
+        if(pulso == 1 & PORTBbits.RB0 == 0)
+        {
+            pulso = 0;
+            display++;
+            if(display == 4)
+            {
+                display = 0;
+            }
+        }
+        if(PORTBbits.RB1 == 1)
+        {
+            pulso2 = 1;  
+        }
+        if(pulso2 == 1 & PORTBbits.RB1 == 0)
+        {
+            pulso2 = 0;
+            display--;
+            if(display == -1)
+            {
+                display = 3;
+            }
+        }
+//-------------------------------------------------------------------------------
+        //display
+        switch(display)
+        {
+            case 0:
+           //canal de LM35
+                __delay_ms (tiempo);
+                    ADCON0 = 0X81;
+                    ADCON0bits.CHS0 =   1;
+                    ADCON0bits.GO    =   1;
+                    while(ADCON0bits.GO);
+                    LCD_Goto(1, 1);
+                    LCD_Print("                 ");
+                    LCD_Goto(1, 2);
+                    LCD_Print("          ");
+                    LCD_Goto(1, 1);
+                    LCD_Print("Temperatura:");
+                    temp = ADRESH * 0.59;
+                    sprintf(str, "%d", temp);
+                    LCD_Goto(14, 1);
+                    LCD_Print(str);
+                    LCD_Goto(1, 2);
+                    LCD_Print("LM35");
+                
+                    break;
+
+            case 1:
+                __delay_ms (tiempo);
+                INTCON   = 0XC0;
+                //OPTION_REG  =   0X40;
+                PIE1bits.ADIE   =   1;
+                PIR1bits.ADIF   =   0;
+                ADCON1  =   0X45;
+                ADCON0bits.CHS0 =   0;
+                ADCON0bits.GO    =   1;
+                
+                while(ADCON0bits.GO);
+                break;
+            case 2:
+                //canal hscr04
+                __delay_ms (tiempo);
+                LCD_Goto(1, 1);
+                LCD_Print("          ");
+                LCD_Goto(1, 2);
+                LCD_Print("          ");
+                LCD_Goto(1, 1);
+                LCD_Print("Distancia: ");
+                LCD_Goto(1, 2);
+                LCD_Print("FSR04");
+                break;
+            case 3:
+                //canal todos
+                __delay_ms (tiempo);
+                
+                //leer por canales con un tiempo especifico.
+                LCD_Goto(1, 1);
+                LCD_Print("                 ");
+                LCD_Goto(1, 2);
+                LCD_Print("          ");
+                LCD_Goto(1, 1);
+                LCD_Print("Dist  temp  obj ");
+                
+                LCD_Goto(1, 2);
+                LCD_Print("FSR04");
+                break;
+            
+        }
+    }
+    return;
+}
