@@ -45,55 +45,74 @@
 #include <stdio.h>      //necesario para utilizar "print"
 
 int temp;
-
-int   data;
-char    str[10];
+int dist;
+int data;
+char str[10];
+char strD[10];
 int display;
 int pulso = 0;
 int pulso2 = 0;
-int tiempo = 200;
+int tiempo = 500;
+int tiempo2 = 0.5;
+int indicador;
 
 void __interrupt() tcInt(void){//     only     process timer0-triggered interrupts
-   
-   
+
    if(PIR1bits.ADIF  && PIE1bits.ADIE) 
       {
        PIR1bits.ADIF = 0;
-       LCD_Goto(1, 1);
-       LCD_Print("Objeto: ");
-       LCD_Goto(1, 2);
-       LCD_Print("CNY70");
-       
        if(ADRESH < 184)
         {
-            LCD_Goto(9, 1);
-            LCD_Print("Si hay ");
+            indicador = 1;
         }
        if(ADRESH > 225)
         {
-            LCD_Goto(9, 1);
-            LCD_Print("No hay ");
+            indicador = 0;
             //eeprom_write (0x20, contador);
         }
    }
 }
 
-void main(void) {
-    TRISA   =   3;              //habilitar 2 primeros bits como entradas
-    ADCON0  =   0x81;           //configuracion ADCON0
-    ADCON1  =   0X45;           //buscar hoja de especificaciones para llenar datos.
-    TRISB   =   3;
-    display = 0;
-    
-    LCD_Begin();        //inicializar libreria LCD
-    LCD_Print(" Bienvenido");
-    LCD_Goto(1,3);
-    __delay_ms(1000);
-        
-    while(1)
-    {
+sensorTemp()
+{
+    __delay_ms (tiempo);
+        ADCON0 = 0X81;
+        ADCON0bits.CHS0 =   1;
+        ADCON0bits.GO    =   1;
+        while(ADCON0bits.GO);
+        temp = ADRESH * 0.59;
+        sprintf(str, "%d", temp);
+}
+sensorObj()
+{
+    INTCON   = 0XC0;
+    //OPTION_REG  =   0X40;
+    PIE1bits.ADIE   =   1;
+    PIR1bits.ADIF   =   0;
+    ADCON1  =   0X45;
+    ADCON0bits.CHS0 =   0;
+    ADCON0bits.GO    =   1;                
+    while(ADCON0bits.GO);
+}
+//_______________________________________________________________________________
+sensorDist()
+{
+    PORTBbits.RB2 = 1;      //senal triger
+    __delay_ms(0.020);      //tiempo minimo señal de triger 10uS
+    PORTBbits.RB2 = 0;      //termina señal triger
+    while(!PORTBbits.RB3);  //espera activacion de echo
+    OPTION_REG = 0x07;      //configuracion para incrementar una unidad cada 51,2 uS
+    TMR0 = 0;               // valor iniciar timer 0
+    while(PORTBbits.RB3)    //espera a desactivar del echo
+    //dist = TMR0 * 58/51.2;  //ecuacion para obtener 58uS por cada incremento de TMR0
+    dist = ((TMR0*51)/58)+(3/2);
+    sprintf(strD, "%d", dist);
+    __delay_ms(2.5);
+}
 //--------------------------------------------------------------------------
-        //botones
+//botones
+void selector()
+{
         if(PORTBbits.RB0 == 1)
         {
             pulso = 1;  
@@ -120,73 +139,121 @@ void main(void) {
                 display = 3;
             }
         }
-//-------------------------------------------------------------------------------
-        //display
+}
+
+void display_selec()
+{
+    //display
         switch(display)
         {
             case 0:
-           //canal de LM35
-                __delay_ms (tiempo);
-                    ADCON0 = 0X81;
-                    ADCON0bits.CHS0 =   1;
-                    ADCON0bits.GO    =   1;
-                    while(ADCON0bits.GO);
+//canal de LM35
+                sensorTemp();                
                     LCD_Goto(1, 1);
                     LCD_Print("                 ");
                     LCD_Goto(1, 2);
                     LCD_Print("          ");
                     LCD_Goto(1, 1);
                     LCD_Print("Temperatura:");
-                    temp = ADRESH * 0.59;
-                    sprintf(str, "%d", temp);
                     LCD_Goto(14, 1);
                     LCD_Print(str);
                     LCD_Goto(1, 2);
-                    LCD_Print("LM35");
-                
-                    break;
-
-            case 1:
-                __delay_ms (tiempo);
-                INTCON   = 0XC0;
-                //OPTION_REG  =   0X40;
-                PIE1bits.ADIE   =   1;
-                PIR1bits.ADIF   =   0;
-                ADCON1  =   0X45;
-                ADCON0bits.CHS0 =   0;
-                ADCON0bits.GO    =   1;
-                
-                while(ADCON0bits.GO);
+                    LCD_Print("LM35");                
                 break;
-            case 2:
-                //canal hscr04
+//-----------------------------------------------------------------------------------
+            case 1:
+//CNY objeto
                 __delay_ms (tiempo);
                 LCD_Goto(1, 1);
-                LCD_Print("          ");
+                LCD_Print("                ");
                 LCD_Goto(1, 2);
-                LCD_Print("          ");
+                LCD_Print("                ");
+                LCD_Goto(1, 1);
+                LCD_Print("Objeto: ");
+                LCD_Goto(1, 2);
+                LCD_Print("CNY70");
+                sensorObj();
+                if (indicador ==1)
+                {
+                   LCD_Goto(10,1);
+                   LCD_Print("Si hay"); 
+                }else{
+                    LCD_Goto(10,1);
+                    LCD_Print("No hay");
+                }
+                break;
+//------------------------------------------------------------------------------------
+//canal FSR04 distancia
+            case 2:
+                __delay_ms (tiempo);
+                sensorDist();
+                LCD_Goto(1, 1);
+                LCD_Print("                ");
+                LCD_Goto(1, 2);
+                LCD_Print("                ");
                 LCD_Goto(1, 1);
                 LCD_Print("Distancia: ");
+                LCD_Goto(14, 1);
+                LCD_Print(strD);
                 LCD_Goto(1, 2);
                 LCD_Print("FSR04");
                 break;
+                
             case 3:
-                //canal todos
+            //canal todos
+                sensorDist();       //Sensor distancia
+                sensorObj();        //Sensor objeto
                 __delay_ms (tiempo);
-                
-                //leer por canales con un tiempo especifico.
                 LCD_Goto(1, 1);
+                LCD_Print("                ");
+                LCD_Goto(1, 1);
+                LCD_Print("Dist  temp  obj  ");
+                __delay_ms(1);
+                LCD_Goto(1, 2);
                 LCD_Print("                 ");
-                LCD_Goto(1, 2);
-                LCD_Print("          ");
-                LCD_Goto(1, 1);
-                LCD_Print("Dist  temp  obj ");
                 
-                LCD_Goto(1, 2);
-                LCD_Print("FSR04");
+                LCD_Goto(1,2);
+                LCD_Print(strD);
+                //__delay_ms(tiempo);
+                
+                sensorTemp();       //Sensor temperatura
+                LCD_Goto(8,2);
+                LCD_Print(str);
+                //__delay_ms(tiempo);
+                
+                
+                if (indicador ==1)
+                {
+                   LCD_Goto(12,2);
+                   LCD_Print("Si"); 
+                }else{
+                    LCD_Goto(12,2);
+                    LCD_Print("NO");
+                }
+                //__delay_ms(tiempo2);
                 break;
-            
         }
     }
+//_______________________________________________________________________________________
+void main(void) {
+    TRISA   =   3;              //habilitar 2 primeros bits como entradas
+    ADCON0  =   0x81;           //configuracion ADCON0
+    ADCON1  =   0X45;           //buscar hoja de especificaciones para llenar datos.
+    TRISB   =   11;
+    display = 0;
+    TMR0 = 0;
+    
+    LCD_Begin();        //inicializar libreria LCD
+    LCD_Print("Bienvenido");
+    LCD_Goto(1,1);
+    __delay_ms(1000);
+    
+    while(1)
+    {
+        selector();
+        display_selec();
+    }
+//-------------------------------------------------------------------------------
+        
     return;
 }
